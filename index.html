@@ -81,6 +81,7 @@
         .badge-sai { background: var(--nok); color: white; border-radius: 4px; font-size: 10px; }
         .dm-link { color: var(--p); font-weight: 600; text-decoration: none; border-bottom: 1px dashed var(--p); cursor: pointer; }
         .cloud-status { font-size: 11px; font-weight: bold; }
+        .app-version { font-size: 11px; font-weight: 700; color: #a0a0a0; background: #f8f9fa; padding: 3px 6px; border-radius: 4px; border: 1px solid #e9ecef; }
     </style>
 </head>
 <body>
@@ -100,6 +101,7 @@
                 <input type="file" id="importFile" hidden accept=".xlsx, .xls" onchange="importExcel(this)">
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#panelOptions"><i data-lucide="settings" size="16"></i></button>
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
+                <span class="app-version ms-1">v1.0.0</span>
             </div>
         </header>
 
@@ -182,7 +184,7 @@
     <div class="offcanvas offcanvas-end" tabindex="-1" id="panelOptions"><div class="offcanvas-header border-bottom"><h5 class="offcanvas-title fw-bold">Configurações</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div><div class="offcanvas-body"><h6>Responsáveis</h6><div class="input-group mb-3"><input type="text" id="newRespName" class="form-control"><button class="btn btn-primary" onclick="addResp()">Add</button></div><div id="respUI"></div><hr><button class="btn btn-outline-danger w-100 btn-sm" onclick="clearData()">LIMPAR TUDO</button></div></div>
 
     <script>
-        // CONFIGURAÇÃO DRIVE: Cole aqui o URL gerado no Passo 1
+        // URL da API do Google Apps Script configurado
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyZ_0yPVRGCoh7rTDbfpBEW1rUjYotoYxPtcbhKZyL78ue6e_qnWhjFNuLLOFPGVus54g/exec";
 
         let db = JSON.parse(localStorage.getItem('nok_app_db')) || [];
@@ -218,22 +220,17 @@
             lucide.createIcons();
         }
 
-        // Função responsável por enviar cumulativamente para a Google Sheet
+        // Envio cumulativo em background para a Google Sheet
         async function sendToGoogleDrive(payload) {
             const indicator = document.getElementById('cloud-indicator');
-            if (SCRIPT_URL.includes("O_SEU_URL_DO_APPS_SCRIPT_AQUI")) {
-                indicator.innerText = "☁️ Cloud não configurada";
-                indicator.className = "cloud-status text-warning";
-                return;
-            }
-
+            
             indicator.innerText = "⏳ A sincronizar...";
             indicator.className = "cloud-status text-primary";
 
             try {
-                const response = await fetch(SCRIPT_URL, {
+                await fetch(SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // Garante funcionamento offline/estático sem bloqueios
+                    mode: 'no-cors', 
                     cache: 'no-cache',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -262,13 +259,13 @@
                 dm: document.getElementById('in-dm').value.split('\n').map(s => s.trim()).filter(s => s)
             };
 
-            // 1. Guarda cumulativamente no LocalStorage primeiro (Segurança)
+            // 1. LocalStorage cumulativo imediato
             db.unshift(novoMovimento);
             document.getElementById('mainForm').reset();
             document.getElementById('in-data').valueAsDate = new Date();
             sync();
 
-            // 2. Dispara o envio em background para a folha do Google Drive
+            // 2. Disparo para a cloud
             await sendToGoogleDrive(novoMovimento);
         };
 
