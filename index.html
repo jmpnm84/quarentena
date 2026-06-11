@@ -86,7 +86,7 @@
 </head>
 <body>
 
-    <main class="container-fluid mx-auto" style="max-width: 1200px;">
+    <main class="container-fluid mx-auto" style="max-width: 1250px;">
         <header class="top-bar mt-2 shadow-sm">
             <div class="logo-container">
                 <div class="logo-text">TRIGO</div>
@@ -101,7 +101,7 @@
                 <input type="file" id="importFile" hidden accept=".xlsx, .xls" onchange="importExcel(this)">
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#panelOptions"><i data-lucide="settings" size="16"></i></button>
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v2.2.0</span>
+                <span class="app-version ms-1">v2.4.0</span>
             </div>
         </header>
 
@@ -139,6 +139,11 @@
                                 <input type="text" id="in-ref" class="form-control form-control-sm" required placeholder="Ex: 328017244R" list="dl-ref">
                                 <datalist id="dl-ref"></datalist>
                             </div>
+                            <div class="col-12">
+                                <label class="small fw-bold mb-1">FORNECEDOR</label>
+                                <input type="text" id="in-fornecedor" class="form-control form-control-sm" placeholder="Ex: Nome do Fornecedor" list="dl-fornecedor">
+                                <datalist id="dl-fornecedor"></datalist>
+                            </div>
                             <div class="col-4">
                                 <label class="small fw-bold mb-1">QTD</label>
                                 <input type="number" id="in-qtd" class="form-control form-control-sm" value="1" min="1" required>
@@ -173,7 +178,7 @@
                         <table class="table table-hover align-middle mb-0" style="font-size: 12px;">
                             <thead class="sticky-top">
                                 <tr>
-                                    <th class="ps-3">Data</th><th>Missão</th><th>Ref</th><th>Tipo</th><th>Qtd</th><th>DM</th><th>Defeitos</th><th class="text-end pe-3">Ação</th>
+                                    <th class="ps-3">Data</th><th>Missão</th><th>Ref</th><th>Fornecedor</th><th>Tipo</th><th>Qtd</th><th>DM</th><th>Defeitos</th><th class="text-end pe-3">Ação</th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody"></tbody>
@@ -204,8 +209,11 @@
         function updateDatalists() {
             const missoes = [...new Set(db.map(i => i.missao))].sort();
             const refs = [...new Set(db.map(i => i.ref))].sort();
+            const fornecedores = [...new Set(db.filter(i => i.fornecedor).map(i => i.fornecedor))].sort();
+            
             document.getElementById('dl-missao').innerHTML = missoes.map(m => `<option value="${m}">`).join('');
             document.getElementById('dl-ref').innerHTML = refs.map(r => `<option value="${r}">`).join('');
+            document.getElementById('dl-fornecedor').innerHTML = fornecedores.map(f => `<option value="${f}">`).join('');
         }
 
         function render() {
@@ -219,11 +227,17 @@
             document.getElementById('respUI').innerHTML = resps.map((r, idx) => `<div class="d-flex justify-content-between align-items-center bg-light p-2 mb-1 rounded border"><span class="fw-medium">${r}</span><button class="btn btn-sm text-danger p-0" onclick="removeResp(${idx})"><i data-lucide="trash-2" size="14"></i></button></div>`).join('');
             
             const filter = document.getElementById('in-filter').value.toLowerCase();
-            document.getElementById('tableBody').innerHTML = db.filter(i => i.missao.toLowerCase().includes(filter) || i.ref.toLowerCase().includes(filter) || (i.defeitos && i.defeitos.toLowerCase().includes(filter))).map(i => `
+            document.getElementById('tableBody').innerHTML = db.filter(i => 
+                i.missao.toLowerCase().includes(filter) || 
+                i.ref.toLowerCase().includes(filter) || 
+                (i.fornecedor && i.fornecedor.toLowerCase().includes(filter)) ||
+                (i.defeitos && i.defeitos.toLowerCase().includes(filter))
+            ).map(i => `
                 <tr>
                     <td class="ps-3 text-muted" style="font-size:11px">${i.data}</td>
                     <td class="fw-bold">${i.missao}</td>
                     <td class="text-primary fw-medium">${i.ref}</td>
+                    <td class="fw-medium text-secondary">${i.fornecedor || '-'}</td>
                     <td><span class="badge ${i.tipo === 'Entrada' ? 'badge-ent' : 'badge-sai'}">${i.tipo.toUpperCase()}</span></td>
                     <td class="fw-bold">${i.qtd}</td>
                     <td>${i.dm && i.dm.length > 0 ? `<a class="dm-link" onclick="openDM(${i.id})">${i.dm.length} DM</a>` : '-'}</td>
@@ -268,6 +282,7 @@
                 missao: document.getElementById('in-missao').value.toUpperCase(),
                 tipo: document.getElementById('in-tipo').value, 
                 ref: document.getElementById('in-ref').value.toUpperCase(),
+                fornecedor: document.getElementById('in-fornecedor').value.trim(),
                 qtd: parseInt(document.getElementById('in-qtd').value), 
                 resp: document.getElementById('in-resp').value,
                 dm: document.getElementById('in-dm').value.split('\n').map(s => s.trim()).filter(s => s),
@@ -296,7 +311,7 @@
         function clearData() { if(confirm('Apagar tudo localmente?') && prompt('Escreva APAGAR') === 'APAGAR') { localStorage.clear(); location.reload(); } }
 
         function exportExcel() {
-            const ws = XLSX.utils.json_to_sheet(db.map(i => ({ Data: i.data, Missão: i.missao, Referência: i.ref, Tipo: i.tipo, Qtd: i.qtd, Resp: i.resp, DM: (i.dm || []).join(' | '), Defeitos: i.defeitos || '' })));
+            const ws = XLSX.utils.json_to_sheet(db.map(i => ({ Data: i.data, Missão: i.missao, Referência: i.ref, Fornecedor: i.fornecedor || '', Tipo: i.tipo, Qtd: i.qtd, Resp: i.resp, DM: (i.dm || []).join(' | '), Defeitos: i.defeitos || '' })));
             const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stock");
             XLSX.writeFile(wb, `TRIGO_StockNOK.xlsx`);
         }
@@ -311,6 +326,7 @@
                     data: row.Data, 
                     missao: String(row.Missão), 
                     ref: String(row.Referência), 
+                    fornecedor: row.Fornecedor ? String(row.Fornecedor) : '',
                     tipo: row.Tipo, 
                     qtd: row.Qtd, 
                     resp: row.Resp, 
