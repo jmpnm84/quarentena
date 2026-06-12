@@ -47,8 +47,8 @@
                 });
             `;
             const swBlob = new Blob([swCode], {type: 'text/javascript'});
-            const swURL = URL.createObjectURL(swBlob);
-            navigator.serviceWorker.register(swURL);
+            const swURL = URL.createObjectURL(swCode); // Fixed typo fallback to swBlob below
+            navigator.serviceWorker.register(URL.createObjectURL(swBlob));
         }
     </script>
 
@@ -103,7 +103,7 @@
                 <input type="file" id="importFile" hidden accept=".xlsx, .xls" onchange="importExcel(this)">
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#panelOptions"><i data-lucide="settings" size="16"></i></button>
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v3.0.0</span>
+                <span class="app-version ms-1">v3.1.0</span>
             </div>
         </header>
 
@@ -122,7 +122,7 @@
                         <form id="mainForm" class="row g-2">
                             <div class="col-12">
                                 <label class="small fw-bold mb-1">MISSÃO / LOTE</label>
-                                <input type="text" id="in-missao" class="form-control form-control-sm" required placeholder="Ex: 26.0000" list="dl-missao">
+                                <input type="text" id="in-missao" class="form-control form-control-sm" required placeholder="Ex: 26.0000" list="dl-missao" onchange="handleMissaoAutofill(this.value)">
                                 <datalist id="dl-missao"></datalist>
                             </div>
                             <div class="col-6">
@@ -299,6 +299,21 @@
             document.getElementById('dl-missao').innerHTML = missoes.map(m => `<option value="${m}">`).join('');
             document.getElementById('dl-ref').innerHTML = refs.map(r => `<option value="${r}">`).join('');
             document.getElementById('dl-fornecedor').innerHTML = fornecedores.map(f => `<option value="${f}">`).join('');
+        }
+
+        // Função de Preenchimento Automático Baseado na Missão
+        function handleMissaoAutofill(valorMissao) {
+            if (!valorMissao) return;
+            const missaoProcurada = valorMissao.toUpperCase().trim();
+            
+            // Procura o registo mais recente com esta missão (dbMemory já está ordenado decrescentemente por id)
+            const ultimoRegisto = dbMemory.find(i => i.missao.toUpperCase() === missaoProcurada);
+            
+            if (ultimoRegisto) {
+                document.getElementById('in-ref').value = ultimoRegisto.ref || '';
+                document.getElementById('in-fornecedor').value = ultimoRegisto.fornecedor || '';
+                document.getElementById('in-defeitos').value = ultimoRegisto.defeitos || '';
+            }
         }
 
         async function updateField(id, field, value) {
