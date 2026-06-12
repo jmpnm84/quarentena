@@ -82,6 +82,8 @@
         .dm-link { color: var(--p); font-weight: 600; text-decoration: none; border-bottom: 1px dashed var(--p); cursor: pointer; }
         .cloud-status { font-size: 11px; font-weight: bold; }
         .app-version { font-size: 11px; font-weight: 700; color: #a0a0a0; background: #f8f9fa; padding: 3px 6px; border-radius: 4px; border: 1px solid #e9ecef; }
+        .editable-cell { cursor: pointer; border-bottom: 1px dashed #ccc; }
+        .editable-cell:hover { background-color: #f1f3f5; }
     </style>
 </head>
 <body>
@@ -101,7 +103,7 @@
                 <input type="file" id="importFile" hidden accept=".xlsx, .xls" onchange="importExcel(this)">
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#panelOptions"><i data-lucide="settings" size="16"></i></button>
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v2.4.0</span>
+                <span class="app-version ms-1">v3.0.0</span>
             </div>
         </header>
 
@@ -193,33 +195,151 @@
     <div class="offcanvas offcanvas-end" tabindex="-1" id="panelOptions"><div class="offcanvas-header border-bottom"><h5 class="offcanvas-title fw-bold">Configurações</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div><div class="offcanvas-body"><h6>Responsáveis</h6><div class="input-group mb-3"><input type="text" id="newRespName" class="form-control"><button class="btn btn-primary" onclick="addResp()">Add</button></div><div id="respUI"></div><hr><button class="btn btn-outline-danger w-100 btn-sm" onclick="clearData()">LIMPAR TUDO</button></div></div>
 
     <script>
-        // URL da API do Google Apps Script configurado
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyZ_0yPVRGCoh7rTDbfpBEW1rUjYotoYxPtcbhKZyL78ue6e_qnWhjFNuLLOFPGVus54g/exec";
 
-        let db = JSON.parse(localStorage.getItem('nok_app_db')) || [];
-        let resps = JSON.parse(localStorage.getItem('nok_app_resps')) || ["Operador Principal"];
+        let dbIndexed;
+        let dbMemory = [];
+        let resps = [];
 
-        function sync() {
-            localStorage.setItem('nok_app_db', JSON.stringify(db));
-            localStorage.setItem('nok_app_resps', JSON.stringify(resps));
+        // Inicialização do IndexedDB
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open("TrigoNokDatabase", 1);
+                
+                request.onupgradeneeded = (e) => {
+                    const database = e.target.result;
+                    if (!database.objectStoreNames.contains("movimentos")) {
+                        database.createObjectStore("movimentos", { keyPath: "id" });
+                    }
+                    if (!database.objectStoreNames.contains("configuracoes")) {
+                        database.createObjectStore("configuracoes", { keyPath: "chave" });
+                    }
+                };
+
+                request.onsuccess = async (e) => {
+                    dbIndexed = e.target.result;
+                    await loadDatabaseMemory();
+                    resolve();
+                };
+
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function loadDatabaseMemory() {
+            resps = await getConfData("responsáveis") || ["Operador Principal"];
+            dbMemory = await getAllMovimentos();
+            // Ordenar por data decrescente (id ou timestamp) para manter o topo atualizado
+            dbMemory.sort((a, b) => b.id - a.id);
             updateDatalists();
             render();
         }
 
+        function getConfData(chave) {
+            return new Promise((resolve) => {
+                const tx = dbIndexed.transaction("configuracoes", "readonly");
+                const store = tx.objectStore("configuracoes");
+                const req = store.get(chave);
+                req.onsuccess = () => resolve(req.result ? req.result.valor : null);
+                req.onerror = () => resolve(null);
+            });
+        }
+
+        function saveConfData(chave, valor) {
+            return new Promise((resolve) => {
+                const tx = dbIndexed.transaction("configuracoes", "readwrite");
+                const store = tx.objectStore("configuracoes");
+                store.put({ chave, valor });
+                tx.oncomplete = () => resolve();
+            });
+        }
+
+        function getAllMovimentos() {
+            return new Promise((resolve) => {
+                const tx = dbIndexed.transaction("movimentos", "readonly");
+                const store = tx.objectStore("movimentos");
+                const req = store.getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => resolve([]);
+            });
+        }
+
+        function saveMovimentoDB(item) {
+            return new Promise((resolve) => {
+                const tx = dbIndexed.transaction("movimentos", "readwrite");
+                const store = tx.objectStore("movimentos");
+                store.put(item);
+                tx.oncomplete = () => resolve();
+            });
+        }
+
+        function deleteMovimentoDB(id) {
+            return new Promise((resolve) => {
+                const tx = dbIndexed.transaction("movimentos", "readwrite");
+                const store = tx.objectStore("movimentos");
+                store.delete(id);
+                tx.oncomplete = () => resolve();
+            });
+        }
+
+        function clearAllDataDB() {
+            return new Promise((resolve) => {
+                const tx = dbIndexed.transaction(["movimentos", "configuracoes"], "readwrite");
+                tx.objectStore("movimentos").clear();
+                tx.objectStore("configuracoes").clear();
+                tx.oncomplete = () => resolve();
+            });
+        }
+
         function updateDatalists() {
-            const missoes = [...new Set(db.map(i => i.missao))].sort();
-            const refs = [...new Set(db.map(i => i.ref))].sort();
-            const fornecedores = [...new Set(db.filter(i => i.fornecedor).map(i => i.fornecedor))].sort();
+            const missoes = [...new Set(dbMemory.map(i => i.missao))].sort();
+            const refs = [...new Set(dbMemory.map(i => i.ref))].sort();
+            const fornecedores = [...new Set(dbMemory.filter(i => i.fornecedor).map(i => i.fornecedor))].sort();
             
             document.getElementById('dl-missao').innerHTML = missoes.map(m => `<option value="${m}">`).join('');
             document.getElementById('dl-ref').innerHTML = refs.map(r => `<option value="${r}">`).join('');
             document.getElementById('dl-fornecedor').innerHTML = fornecedores.map(f => `<option value="${f}">`).join('');
         }
 
+        async function updateField(id, field, value) {
+            const item = dbMemory.find(i => i.id === id);
+            if (item) {
+                if (field === 'missao' || field === 'ref') {
+                    item[field] = value.toUpperCase().trim();
+                } else if (field === 'qtd') {
+                    item[field] = parseInt(value) || 1;
+                } else {
+                    item[field] = value.trim();
+                }
+                await saveMovimentoDB(item);
+                updateDatalists();
+                render();
+            }
+        }
+
+        async function editRowWizard(id) {
+            const item = dbMemory.find(i => i.id === id);
+            if (!item) return;
+
+            const novaData = prompt("Editar DATA (AAAA-MM-DD):", item.data);
+            if (novaData !== null) await updateField(id, 'data', novaData);
+
+            const novoTipo = prompt("Editar TIPO (Entrada ou Saída):", item.tipo);
+            if (novoTipo !== null && (novoTipo.toLowerCase() === 'entrada' || novoTipo.toLowerCase() === 'saída')) {
+                await updateField(id, 'tipo', novoTipo.charAt(0).toUpperCase() + novoTipo.slice(1).toLowerCase());
+            }
+
+            const novaQtd = prompt("Editar QUANTIDADE:", item.qtd);
+            if (novaQtd !== null) await updateField(id, 'qtd', novaQtd);
+
+            const novoResp = prompt("Editar RESPONSÁVEL:", item.resp || '');
+            if (novoResp !== null) await updateField(id, 'resp', novoResp);
+        }
+
         function render() {
-            const ent = db.filter(i => i.tipo === 'Entrada').reduce((a, b) => a + b.qtd, 0);
-            const sai = db.filter(i => i.tipo === 'Saída').reduce((a, b) => a + b.qtd, 0);
-            document.getElementById('count-reg').innerText = db.length;
+            const ent = dbMemory.filter(i => i.tipo === 'Entrada').reduce((a, b) => a + b.qtd, 0);
+            const sai = dbMemory.filter(i => i.tipo === 'Saída').reduce((a, b) => a + b.qtd, 0);
+            document.getElementById('count-reg').innerText = dbMemory.length;
             document.getElementById('count-ent').innerText = ent;
             document.getElementById('count-sai').innerText = sai;
             document.getElementById('count-stk').innerText = ent - sai;
@@ -227,7 +347,7 @@
             document.getElementById('respUI').innerHTML = resps.map((r, idx) => `<div class="d-flex justify-content-between align-items-center bg-light p-2 mb-1 rounded border"><span class="fw-medium">${r}</span><button class="btn btn-sm text-danger p-0" onclick="removeResp(${idx})"><i data-lucide="trash-2" size="14"></i></button></div>`).join('');
             
             const filter = document.getElementById('in-filter').value.toLowerCase();
-            document.getElementById('tableBody').innerHTML = db.filter(i => 
+            document.getElementById('tableBody').innerHTML = dbMemory.filter(i => 
                 i.missao.toLowerCase().includes(filter) || 
                 i.ref.toLowerCase().includes(filter) || 
                 (i.fornecedor && i.fornecedor.toLowerCase().includes(filter)) ||
@@ -235,23 +355,24 @@
             ).map(i => `
                 <tr>
                     <td class="ps-3 text-muted" style="font-size:11px">${i.data}</td>
-                    <td class="fw-bold">${i.missao}</td>
-                    <td class="text-primary fw-medium">${i.ref}</td>
-                    <td class="fw-medium text-secondary">${i.fornecedor || '-'}</td>
+                    <td class="fw-bold editable-cell" contenteditable="true" onblur="updateField(${i.id}, 'missao', this.innerText)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">${i.missao}</td>
+                    <td class="text-primary fw-medium editable-cell" contenteditable="true" onblur="updateField(${i.id}, 'ref', this.innerText)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">${i.ref}</td>
+                    <td class="fw-medium text-secondary editable-cell" contenteditable="true" onblur="updateField(${i.id}, 'fornecedor', this.innerText)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">${i.fornecedor || '-'}</td>
                     <td><span class="badge ${i.tipo === 'Entrada' ? 'badge-ent' : 'badge-sai'}">${i.tipo.toUpperCase()}</span></td>
                     <td class="fw-bold">${i.qtd}</td>
                     <td>${i.dm && i.dm.length > 0 ? `<a class="dm-link" onclick="openDM(${i.id})">${i.dm.length} DM</a>` : '-'}</td>
-                    <td class="text-muted italic">${i.defeitos || '-'}</td>
-                    <td class="text-end pe-3"><button class="btn btn-sm text-secondary" onclick="removeEntry(${i.id})"><i data-lucide="trash-2" size="14"></i></button></td>
+                    <td class="text-muted italic editable-cell" contenteditable="true" onblur="updateField(${i.id}, 'defeitos', this.innerText)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">${i.defeitos || '-'}</td>
+                    <td class="text-end pe-3">
+                        <button class="btn btn-sm text-primary me-1" onclick="editRowWizard(${i.id})" title="Editar Outros Campos"><i data-lucide="edit-2" size="14"></i></button>
+                        <button class="btn btn-sm text-secondary" onclick="removeEntry(${i.id})"><i data-lucide="trash-2" size="14"></i></button>
+                    </td>
                 </tr>
             `).join('');
             lucide.createIcons();
         }
 
-        // Envio cumulativo em background para a Google Sheet
         async function sendToGoogleDrive(payload) {
             const indicator = document.getElementById('cloud-indicator');
-            
             indicator.innerText = "⏳ A sincronizar...";
             indicator.className = "cloud-status text-primary";
 
@@ -263,7 +384,6 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
                 indicator.innerText = "✅ Sincronizado com o Drive";
                 indicator.className = "cloud-status text-success";
             } catch (error) {
@@ -289,40 +409,72 @@
                 defeitos: document.getElementById('in-defeitos').value.trim()
             };
 
-            // 1. LocalStorage cumulativo imediato
-            db.unshift(novoMovimento);
+            await saveMovimentoDB(novoMovimento);
+            dbMemory.unshift(novoMovimento);
+            
             document.getElementById('mainForm').reset();
             document.getElementById('in-data').valueAsDate = new Date();
-            sync();
+            
+            updateDatalists();
+            render();
 
-            // 2. Disparo para a cloud
             await sendToGoogleDrive(novoMovimento);
         };
 
         function openDM(id) {
-            const item = db.find(i => i.id === id);
+            const item = dbMemory.find(i => i.id === id);
             document.getElementById('dmListUI').innerHTML = item.dm.map(c => `<li class="list-group-item small font-monospace" style="font-size:10px">${c}</li>`).join('');
             new bootstrap.Modal(document.getElementById('dmModal')).show();
         }
 
-        function addResp() { const n = document.getElementById('newRespName').value.trim(); if(n) { resps.push(n); document.getElementById('newRespName').value = ''; sync(); } }
-        function removeResp(idx) { if(confirm('Remover?')) { resps.splice(idx, 1); sync(); } }
-        function removeEntry(id) { if(confirm('Eliminar? (Nota: Isto remove apenas do ecrã local, não altera o histórico cumulativo já enviado para o Drive)')) { db = db.filter(i => i.id !== id); sync(); } }
-        function clearData() { if(confirm('Apagar tudo localmente?') && prompt('Escreva APAGAR') === 'APAGAR') { localStorage.clear(); location.reload(); } }
+        async function addResp() { 
+            const n = document.getElementById('newRespName').value.trim(); 
+            if(n) { 
+                resps.push(n); 
+                document.getElementById('newRespName').value = ''; 
+                await saveConfData("responsáveis", resps);
+                render();
+            } 
+        }
+        
+        async function removeResp(idx) { 
+            if(confirm('Remover?')) { 
+                resps.splice(idx, 1); 
+                await saveConfData("responsáveis", resps);
+                render();
+            } 
+        }
+        
+        async function removeEntry(id) { 
+            if(confirm('Eliminar? (Nota: Isto remove apenas do ecrã local, não altera o histórico cumulativo já enviado para o Drive)')) { 
+                await deleteMovimentoDB(id);
+                dbMemory = dbMemory.filter(i => i.id !== id);
+                updateDatalists();
+                render();
+            } 
+        }
+        
+        async function clearData() { 
+            if(confirm('Apagar tudo localmente?') && prompt('Escreva APAGAR') === 'APAGAR') { 
+                await clearAllDataDB();
+                location.reload(); 
+            } 
+        }
 
         function exportExcel() {
-            const ws = XLSX.utils.json_to_sheet(db.map(i => ({ Data: i.data, Missão: i.missao, Referência: i.ref, Fornecedor: i.fornecedor || '', Tipo: i.tipo, Qtd: i.qtd, Resp: i.resp, DM: (i.dm || []).join(' | '), Defeitos: i.defeitos || '' })));
+            const ws = XLSX.utils.json_to_sheet(dbMemory.map(i => ({ Data: i.data, Missão: i.missao, Referência: i.ref, Fornecedor: i.fornecedor || '', Tipo: i.tipo, Qtd: i.qtd, Resp: i.resp, DM: (i.dm || []).join(' | '), Defeitos: i.defeitos || '' })));
             const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stock");
             XLSX.writeFile(wb, `TRIGO_StockNOK.xlsx`);
         }
 
         function importExcel(input) {
             const reader = new FileReader();
-            reader.onload = (e) => {
+            reader.onload = async (e) => {
                 const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
                 const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                db = [...json.map(row => ({ 
-                    id: Date.now()+Math.random(), 
+                
+                const novosItens = json.map(row => ({ 
+                    id: Date.now() + Math.random(), 
                     data: row.Data, 
                     missao: String(row.Missão), 
                     ref: String(row.Referência), 
@@ -332,16 +484,23 @@
                     resp: row.Resp, 
                     dm: row.DM ? String(row.DM).split(' | ') : [],
                     defeitos: row.Defeitos ? String(row.Defeitos) : ''
-                })), ...db];
-                sync();
+                }));
+
+                for(const item of novosItens) {
+                    await saveMovimentoDB(item);
+                }
+
+                dbMemory = [...novosItens, ...dbMemory];
+                updateDatalists();
+                render();
             };
             reader.readAsArrayBuffer(input.files[0]);
         }
 
-        window.onload = () => { 
+        window.onload = async () => { 
             document.getElementById('in-data').valueAsDate = new Date(); 
             document.getElementById('in-filter').onkeyup = render; 
-            sync(); 
+            await initIndexedDB();
         };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
