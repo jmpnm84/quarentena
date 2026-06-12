@@ -99,11 +99,16 @@
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span id="cloud-indicator" class="cloud-status text-muted me-2"></span>
-                <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('importFile').click()"><i data-lucide="upload" size="16"></i></button>
+                
+                <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('importFile').click()" title="Importar Ficheiro Local Excel"><i data-lucide="upload" size="16"></i></button>
                 <input type="file" id="importFile" hidden accept=".xlsx, .xls" onchange="importExcel(this)">
+                
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#panelOptions"><i data-lucide="settings" size="16"></i></button>
+                
+                <button class="btn btn-sm btn-outline-primary fw-bold" onclick="importFromDrive()" id="btn-import-drive"><i data-lucide="cloud-download" size="16"></i> DRIVE</button>
+                
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v3.3.0</span>
+                <span class="app-version ms-1">v3.4.1</span>
             </div>
         </header>
 
@@ -469,6 +474,78 @@
                 console.error("Erro ao enviar para o Drive:", error);
                 indicator.innerText = "❌ Erro Drive (Guardado Local)";
                 indicator.className = "cloud-status text-danger";
+            }
+        }
+
+        // Nova Função para Importar todos os valores guardados na Google Drive via Apps Script (GET)
+        async function importFromDrive() {
+            const btn = document.getElementById('btn-import-drive');
+            const indicator = document.getElementById('cloud-indicator');
+            
+            btn.disabled = true;
+            indicator.innerText = "⏳ A descarregar do Drive...";
+            indicator.className = "cloud-status text-primary";
+
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'GET',
+                    cache: 'no-cache'
+                });
+
+                if (!response.ok) throw new Error('Falha na resposta do servidor.');
+
+                const dadosDrive = await response.json();
+
+                if (!Array.isArray(dadosDrive)) {
+                    throw new Error('Formato de dados recebido do Drive é inválido.');
+                }
+
+                let novosRegistosContador = 0;
+
+                // Percorrer os dados da Cloud e inseri-los no IndexedDB se não existirem
+                for (const item of dadosDrive) {
+                    // Trata IDs para garantir comparação e campos nulos/padrões
+                    const parsedId = item.id ? parseFloat(item.id) : Date.now() + Math.random();
+                    
+                    // Verifica se o ID já existe na dbMemory local
+                    const existeLocal = dbMemory.some(localItem => localItem.id === parsedId);
+
+                    if (!existeLocal) {
+                        const novoItem = {
+                            id: parsedId,
+                            data: item.data || new Date().toISOString().split('T')[0],
+                            missao: String(item.missao || '').toUpperCase(),
+                            tipo: item.tipo === 'Saída' ? 'Saída' : 'Entrada',
+                            ref: String(item.ref || '').toUpperCase(),
+                            fornecedor: item.fornecedor ? String(item.fornecedor).trim() : '',
+                            qtd: parseInt(item.qtd) || 1,
+                            resp: item.resp || 'Operador Principal',
+                            dm: Array.isArray(item.dm) ? item.dm : (item.dm ? String(item.dm).split(' | ') : []),
+                            defeitos: item.defeitos ? String(item.defeitos).trim() : ''
+                        };
+
+                        await saveMovimentoDB(novoItem);
+                        dbMemory.push(novoItem);
+                        novosRegistosContador++;
+                    }
+                }
+
+                // Voltar a ordenar a memória local de forma decrescente por ID
+                dbMemory.sort((a, b) => b.id - a.id);
+                updateDatalists();
+                render();
+
+                indicator.innerText = `✅ Atualizado! +${novosRegistosContador} itens novos.`;
+                indicator.className = "cloud-status text-success";
+                alert(`Importação concluída com sucesso! Foram adicionados ${novosRegistosContador} novos registos que não estavam no dispositivo.`);
+
+            } catch (error) {
+                console.error("Erro ao importar do Google Drive:", error);
+                indicator.innerText = "❌ Erro ao ler da Nuvem";
+                indicator.className = "cloud-status text-danger";
+                alert("Não foi possível obter os dados da Cloud. Verifique se a sua função 'doGet(e)' está corretamente implementada e publicada no Apps Script.");
+            } finally {
+                btn.disabled = false;
             }
         }
 
