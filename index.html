@@ -103,7 +103,7 @@
                 <input type="file" id="importFile" hidden accept=".xlsx, .xls" onchange="importExcel(this)">
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#panelOptions"><i data-lucide="settings" size="16"></i></button>
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v3.2.0</span>
+                <span class="app-version ms-1">v3.3.0</span>
             </div>
         </header>
 
@@ -394,16 +394,22 @@
             });
 
             const refsOrdenadas = Object.keys(balancoPorRef).sort();
-            if (refsOrdenadas.length === 0) {
-                document.getElementById('balancoTableBody').innerHTML = `<tr><td colspan="4" class="text-muted p-2">Nenhum registo em base de dados.</td></tr>`;
+            
+            // Filtrar referências para remover as que possuem saldo igual a 0
+            const refsFiltradas = refsOrdenadas.filter(ref => {
+                const totalJaula = balancoPorRef[ref].entradas - balancoPorRef[ref].saidas;
+                return totalJaula !== 0;
+            });
+
+            if (refsFiltradas.length === 0) {
+                document.getElementById('balancoTableBody').innerHTML = `<tr><td colspan="4" class="text-muted p-2">Nenhum registo em base de dados com stock ativo.</td></tr>`;
             } else {
-                document.getElementById('balancoTableBody').innerHTML = refsOrdenadas.map(ref => {
+                document.getElementById('balancoTableBody').innerHTML = refsFiltradas.map(ref => {
                     const e = balancoPorRef[ref].entradas;
                     const s = balancoPorRef[ref].saidas;
                     const totalJaula = e - s;
                     
                     let badgeClass = "bg-warning text-dark"; // Padrão se houver stock ativo
-                    if (totalJaula === 0) badgeClass = "bg-light text-muted";
                     if (totalJaula < 0) badgeClass = "bg-danger text-white";
                     if (totalJaula > 0 && s === 0) badgeClass = "bg-success text-white";
 
