@@ -108,7 +108,7 @@
                 <button class="btn btn-sm btn-outline-primary fw-bold" onclick="importFromDrive()" id="btn-import-drive"><i data-lucide="cloud-download" size="16"></i> DRIVE</button>
                 
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v3.4.1</span>
+                <span class="app-version ms-1">v3.5.1</span>
             </div>
         </header>
 
@@ -208,7 +208,7 @@
                         <table class="table table-hover align-middle mb-0" style="font-size: 12px;">
                             <thead class="sticky-top">
                                 <tr>
-                                    <th class="ps-3">Data</th><th>Missão</th><th>Ref</th><th>Fornecedor</th><th>Tipo</th><th>Qtd</th><th>DM</th><th>Defeitos</th><th class="text-end pe-3">Ação</th>
+                                    <th class="ps-3">Data</th><th>Missão</th><th>Ref</th><th>Fornecedor</th><th>Tipo</th><th>Qtd</th><th>Resp.</th><th>DM</th><th>Defeitos</th><th class="text-end pe-3">Ação</th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody"></tbody>
@@ -413,17 +413,13 @@
                     const e = balancoPorRef[ref].entradas;
                     const s = balancoPorRef[ref].saidas;
                     const totalJaula = e - s;
-                    
-                    let badgeClass = "bg-warning text-dark"; // Padrão se houver stock ativo
-                    if (totalJaula < 0) badgeClass = "bg-danger text-white";
-                    if (totalJaula > 0 && s === 0) badgeClass = "bg-success text-white";
 
                     return `
                         <tr>
                             <td class="fw-bold text-start ps-3">${ref}</td>
                             <td class="text-success fw-medium">+ ${e}</td>
                             <td class="text-danger fw-medium">- ${s}</td>
-                            <td><span class="badge ${badgeClass} px-3 py-1.5 fs-6 fw-bold">${totalJaula}</span></td>
+                            <td class="fw-bold fs-6">${totalJaula}</td>
                         </tr>
                     `;
                 }).join('');
@@ -444,6 +440,7 @@
                     <td class="fw-medium text-secondary editable-cell" contenteditable="true" onblur="updateField(${i.id}, 'fornecedor', this.innerText)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">${i.fornecedor || '-'}</td>
                     <td><span class="badge ${i.tipo === 'Entrada' ? 'badge-ent' : 'badge-sai'}">${i.tipo.toUpperCase()}</span></td>
                     <td class="fw-bold">${i.qtd}</td>
+                    <td class="text-secondary fw-medium">${i.resp || '-'}</td>
                     <td>${i.dm && i.dm.length > 0 ? `<a class="dm-link" onclick="openDM(${i.id})">${i.dm.length} DM</a>` : '-'}</td>
                     <td class="text-muted italic editable-cell" contenteditable="true" onblur="updateField(${i.id}, 'defeitos', this.innerText)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">${i.defeitos || '-'}</td>
                     <td class="text-end pe-3">
