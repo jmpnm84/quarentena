@@ -56,6 +56,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 
     <style>
         :root { 
@@ -108,7 +110,7 @@
                 <button class="btn btn-sm btn-outline-primary fw-bold" onclick="importFromDrive()" id="btn-import-drive"><i data-lucide="cloud-download" size="16"></i> DRIVE</button>
                 
                 <button class="btn btn-sm btn-primary" onclick="exportExcel()"><i data-lucide="download" size="16"></i> EXCEL</button>
-                <span class="app-version ms-1">v3.5.1</span>
+                <span class="app-version ms-1">v3.6.0</span>
             </div>
         </header>
 
@@ -122,7 +124,13 @@
         <div class="row g-2 mb-3">
             <div class="col-12">
                 <div class="card shadow-sm">
-                    <div class="header-section-title bg-secondary"><i data-lucide="layers" class="me-2" size="16"></i>BALANÇO INDIVIDUAL EM JAULA (POR REFERÊNCIA)</div>
+                    <div class="header-section-title bg-secondary d-flex justify-content-between align-items-center">
+                        <span><i data-lucide="layers" class="me-2" size="16"></i>BALANÇO INDIVIDUAL EM JAULA (POR REFERÊNCIA)</span>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-light text-dark fw-bold py-0 px-2" style="font-size: 11px;" onclick="printChecklist()"><i data-lucide="printer" size="14" class="me-1"></i>Imprimir Checklist</button>
+                            <button class="btn btn-sm btn-light text-dark fw-bold py-0 px-2" style="font-size: 11px;" onclick="sharePDF()"><i data-lucide="share-2" size="14" class="me-1"></i>Partilhar PDF</button>
+                        </div>
+                    </div>
                     <div class="p-2 balanco-container bg-white">
                         <table class="table table-sm table-bordered align-middle mb-0 text-center" style="font-size: 11px;">
                             <thead class="bg-light sticky-top">
@@ -612,6 +620,154 @@
                 await clearAllDataDB();
                 location.reload(); 
             } 
+        }
+
+        // Função Auxiliar para Calcular o Balanço Atual por Referência
+        function getBalancoDataMap() {
+            const balancoPorRef = {};
+            dbMemory.forEach(item => {
+                const ref = item.ref || 'SEM REF';
+                if (!balancoPorRef[ref]) {
+                    balancoPorRef[ref] = { entradas: 0, saidas: 0 };
+                }
+                if (item.tipo === 'Entrada') {
+                    balancoPorRef[ref].entradas += item.qtd;
+                } else if (item.tipo === 'Saída') {
+                    balancoPorRef[ref].saidas += item.qtd;
+                }
+            });
+            const refsOrdenadas = Object.keys(balancoPorRef).sort();
+            return refsOrdenadas.filter(ref => {
+                const totalJaula = balancoPorRef[ref].entradas - balancoPorRef[ref].saidas;
+                return totalJaula !== 0;
+            }).map(ref => ({
+                ref: ref,
+                entradas: balancoPorRef[ref].entradas,
+                saidas: balancoPorRef[ref].saidas,
+                total: balancoPorRef[ref].entradas - balancoPorRef[ref].saidas
+            }));
+        }
+
+        // 1. Botão Checklist (Impressão em formato Checklist com quadrados para visto)
+        function printChecklist() {
+            const dados = getBalancoDataMap();
+            const dataAtual = new Date().toLocaleDateString('pt-PT');
+            
+            let htmlContent = `
+                <!DOCTYPE html>
+                <html lang="pt">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Checklist - Balanço Individual em Jaula</title>
+                    <style>
+                        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; color: #333; }
+                        h2 { text-align: center; color: #0e4c85; margin-bottom: 5px; }
+                        .subtitle { text-align: center; font-size: 12px; color: #666; margin-bottom: 20px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        th, td { border: 1px solid #999; padding: 8px 12px; text-align: center; font-size: 12px; }
+                        th { background-color: #f2f2f2; color: #0e4c85; }
+                        .text-left { text-align: left; }
+                        .checkbox-box { width: 20px; height: 20px; border: 2px solid #333; display: inline-block; vertical-align: middle; }
+                    </style>
+                </head>
+                <body>
+                    <h2>TRIGO - CHECKLIST BALANÇO INDIVIDUAL EM JAULA</h2>
+                    <div class="subtitle">Data de Emissão: ${dataAtual}</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;">[ ]</th>
+                                <th class="text-left">Referência da Peça</th>
+                                <th>Total Entradas (+)</th>
+                                <th>Total Saídas (-)</th>
+                                <th>Disponível em Jaula</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            if (dados.length === 0) {
+                htmlContent += `<tr><td colspan="5">Nenhum registo com stock ativo em jaula.</td></tr>`;
+            } else {
+                dados.forEach(item => {
+                    htmlContent += `
+                        <tr>
+                            <td><div class="checkbox-box"></div></td>
+                            <td class="text-left"><b>${item.ref}</b></td>
+                            <td style="color: #27ae60;">+ ${item.entradas}</td>
+                            <td style="color: #c0392b;">- ${item.saidas}</td>
+                            <td><b>${item.total}</b></td>
+                        </tr>
+                    `;
+                });
+            }
+
+            htmlContent += `
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+
+            const printWin = window.open('', '_blank');
+            printWin.document.write(htmlContent);
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(() => {
+                printWin.print();
+                printWin.close();
+            }, 500);
+        }
+
+        // 2. Botão Partilhar PDF (Gerar PDF dinâmico via jsPDF e partilhar/descarregar)
+        function sharePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const dados = getBalancoDataMap();
+            const dataAtual = new Date().toLocaleDateString('pt-PT');
+
+            // Cabeçalho do PDF
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(16);
+            doc.setTextColor(14, 76, 133);
+            doc.text("TRIGO - Balanço Individual em Jaula (Zona NOK)", 14, 20);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Data de Emissão: ${dataAtual}`, 14, 28);
+
+            // Mapear dados para a tabela do jsPDF
+            const tableRows = dados.map(item => [
+                item.ref,
+                `+ ${item.entradas}`,
+                `- ${item.saidas}`,
+                String(item.total)
+            ]);
+
+            doc.autoTable({
+                startY: 35,
+                head: [['Referência da Peça', 'Total Entradas (+)', 'Total Saídas (-)', 'Disponível em Jaula']],
+                body: tableRows.length > 0 ? tableRows : [['Nenhum registo ativo', '-', '-', '-']],
+                theme: 'grid',
+                headStyles: { fillColor: [14, 76, 133], textColor: [255, 255, 255], fontStyle: 'bold' },
+                styles: { fontSize: 10, cellPadding: 5, halign: 'center' },
+                columnStyles: { 0: { halign: 'left' } }
+            });
+
+            const pdfBlob = doc.output('blob');
+            const pdfFile = new File([pdfBlob], "Balanco_Individual_Jaula.pdf", { type: "application/pdf" });
+
+            if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+                navigator.share({
+                    title: 'Balanço Individual em Jaula',
+                    text: 'Segue em anexo o relatório do balanço individual em jaula.',
+                    files: [pdfFile]
+                }).catch(err => console.log('Partilha cancelada ou falhou:', err));
+            } else {
+                // Fallback para download direto caso a API de partilha não seja suportada
+                doc.save("Balanco_Individual_Jaula.pdf");
+            }
         }
 
         function exportExcel() {
